@@ -8,36 +8,48 @@ HEADER = 1024
 PORT = 5050
 FORMAT = 'utf-8'
 DISCONNECTMESSAGE = "***!DISCONNECT!***"
+LISTCOMMAND = "***!LIST!***"
+MKDIRCOMMAND = "***!MKDIR!***"
 PATH = "H:/Programming/python/Course/Projects/ClientServerFilesSharingProject/CloudFolder"
 
 class ServerApp:
     def __init__(self, root):
         self.root = root
         self.root.title("File Server")
-        self.root.geometry("600x400")
+        self.root.geometry("800x600")
         self.root.configure(bg="#e0f2f1")
 
-        # Frame for text area and directory listing
         self.frame = tk.Frame(self.root, bg="#ffffff", bd=2, relief=tk.RAISED)
-        self.frame.pack(padx=10, pady=10, fill=tk.BOTH, expand=True)
+        self.frame.pack(padx=20, pady=20, fill=tk.BOTH, expand=True)
 
-        # Text area for logs
-        self.text_area = tk.Text(self.frame, wrap=tk.WORD, height=5, bg="#f1f8e9", font=('Arial', 12))
-        self.text_area.pack(padx=10, pady=10, fill=tk.BOTH, expand=True)
+        # Style configuration
+        style = ttk.Style()
+        style.configure("Treeview", background="#ffffff", foreground="#000000", font=('Arial', 12))
+        style.configure("Treeview.Heading", font=('Arial', 14, 'bold'))
+        style.configure("TButton", font=('Arial', 12, 'bold'), padding=10)
+        style.configure("TFrame", background="#e0f2f1")
 
         # Directory listing
         self.tree = ttk.Treeview(self.frame, columns=("Name",), show='tree')
         self.tree.heading("#0", text="Files in Cloud Folder")
         self.tree.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-        self.refresh_directory()
 
-        # Start Server Button
-        button_style = {'bg': '#00796b', 'fg': 'white', 'font': ('Arial', 12), 'width': 20}
+        # Log area
+        self.text_area = tk.Text(self.frame, wrap=tk.WORD, height=5, bg="#f1f8e9", font=('Arial', 12))
+        self.text_area.pack(padx=10, pady=10, fill=tk.BOTH, expand=True)
+
+        # Buttons
+        button_style = {'bg': '#0288d1', 'fg': 'white', 'font': ('Arial', 12, 'bold'), 'width': 20}
         self.start_button = tk.Button(self.frame, text="Start Server", command=self.start_server, **button_style)
         self.start_button.pack(pady=5)
 
+        self.back_button = tk.Button(self.frame, text="Back", command=self.go_back, **button_style)
+        self.back_button.pack(pady=5)
+
         # Initialize server
         self.server_socket = None
+        self.current_path = PATH
+        self.path_stack = []
 
     def start_server(self):
         """Start the server and listen for incoming connections."""
@@ -69,35 +81,67 @@ class ServerApp:
                 self.log_message(f"Accept connection error: {e}")
 
     def handle_client(self, conn, addr):
-        """Handle file transfer from a client."""
+        """Handle commands and file transfers from a client."""
         while True:
             try:
-                file_name = conn.recv(100).decode(FORMAT).strip()
-                if file_name == DISCONNECTMESSAGE:
+                command = conn.recv(100).decode(FORMAT).strip()
+                if command == DISCONNECTMESSAGE:
                     self.log_message(f"Client {addr} disconnected.")
                     break
-                self.log_message(f"Receiving file: {file_name}")
-                with open(f"{PATH}/{file_name}", 'wb') as file:
-                    data_length = int(conn.recv(HEADER).decode(FORMAT).strip())
-                    received = 0
-                    while received < data_length:
-                        file_data = conn.recv(HEADER)
-                        if not file_data:
-                            break
-                        file.write(file_data)
-                        received += len(file_data)
-                self.log_message(f"File {file_name} received successfully.")
-                self.refresh_directory()
+                elif command.startswith(MKDIRCOMMAND):
+                    folder_name = command.split(":")[1]
+                    os.makedirs(os.path.join(self.current_path, folder_name), exist_ok=True)
+                    self.log_message(f"Created folder: {folder_name}")
+                    self.refresh_directory()
+                elif command.startswith(LISTCOMMAND):
+                    current_path = command.split(":")[1]
+                    self.log_message(f"Listing directory: {current_path}")
+                    dir_listing = self.get_directory_listing(current_path)
+                    conn.send(str(dir_listing).encode(FORMAT))
+                else:
+                    file_name = command
+                    self.log_message(f"Receiving file: {file_name}")
+                    with open(os.path.join(self.current_path, file_name), 'wb') as file:
+                        data_length = int(conn.recv(HEADER).decode(FORMAT).strip())
+                        received = 0
+                        while received < data_length:
+                            file_data = conn.recv(HEADER)
+                            if not file_data:
+                                break
+                            file.write(file_data)
+                            received += len(file_data)
+                    self.log_message(f"File {file_name} received successfully.")
+                    self.refresh_directory()
             except Exception as e:
                 self.log_message(f"Error: {e}")
                 break
-        conn.close()  # Close the connection after handling
+        conn.close()
+
+    def get_directory_listing(self, current_path):
+        """Get a directory listing including subdirectories."""
+        dir_listing = []
+        full_path = os.path.join(PATH, current_path)
+        for root, dirs, files in os.walk(full_path):
+            for name in dirs:
+                dir_listing.append(os.path.relpath(os.path.join(root, name), PATH) + '/')
+            for name in files:
+                dir_listing.append(os.path.relpath(os.path.join(root, name), PATH))
+            break
+        return dir_listing
 
     def refresh_directory(self):
-        """Update the directory listing from the cloud folder."""
+        """Update the directory listing in the GUI."""
         self.tree.delete(*self.tree.get_children())
-        for file_name in os.listdir(PATH):
-            self.tree.insert("", tk.END, text=file_name)
+        for item in self.get_directory_listing(""):
+            self.tree.insert("", tk.END, text=item)
+
+    def go_back(self):
+        """Navigate to the previous directory."""
+        if self.path_stack:
+            self.current_path = self.path_stack.pop()
+            self.refresh_directory()
+        else:
+            self.log_message("No previous directory to go back to.")
 
     def log_message(self, message):
         """Log messages to the GUI."""
