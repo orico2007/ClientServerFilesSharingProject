@@ -1,0 +1,133 @@
+﻿<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <meta charset="utf-8" />
+    <title>Calculator</title>
+</head>
+<body>
+    <div class="calc">
+        <input type="text" id="screen" value="" disabled>
+        <div class="buttons">
+            <div class="numbers">
+                <input type="button" value="1" class="number" onclick="appendValue(1)">
+                <input type="button" value="2" class="number" onclick="appendValue(2)">
+                <input type="button" value="3" class="number" onclick="appendValue(3)">
+                <input type="button" value="4" class="number" onclick="appendValue(4)">
+                <input type="button" value="5" class="number" onclick="appendValue(5)">
+                <input type="button" value="6" class="number" onclick="appendValue(6)">
+                <input type="button" value="7" class="number" onclick="appendValue(7)">
+                <input type="button" value="8" class="number" onclick="appendValue(8)">
+                <input type="button" value="9" class="number" onclick="appendValue(9)">
+                <input type="button" value="0" class="number" onclick="appendValue(0)">
+            </div>
+            <div class="actions">
+                <input type="button" value="+" class="action" onclick="appendValue('+')">
+                <input type="button" value="-" class="action" onclick="appendValue('-')">
+                <input type="button" value="*" class="action" onclick="appendValue('*')">
+                <input type="button" value="/" class="action" onclick="appendValue('/')">
+                <input type="button" value="^" class="action" onclick="appendValue('**')">
+                <input type="button" value="√" class="action" onclick="calculateRoot()">
+                <input type="button" value="%" class="action" onclick="appendValue('%')">
+                <input type="button" value="AC" class="action" onclick="clearDisplay()">
+            </div>
+        </div>
+        <div class="equals">
+            <input type="button" value="=" class="equals" onclick="calculate()">
+        </div>
+    </div>
+
+    <script>
+        let display = document.getElementById('screen');
+
+        function appendValue(value) {
+            display.value += value;
+        }
+
+        function calculate() {
+            try {
+                display.value = eval(display.value);
+            } catch (error) {
+                display.value = 'Error';
+            }
+        }
+
+        function calculateRoot() {
+            try {
+                display.value = Math.sqrt(eval(display.value));
+            } catch (error) {
+                display.value = 'Error';
+            }
+        }
+
+        function clearDisplay() {
+            display.value = '';
+        }
+    </script>
+
+    <style>
+        body {
+            background-color: #f5f5f5;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+        }
+
+        .calc {
+            background-color: #333;
+            width: 300px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        #screen {
+            font-size: 20px;
+            color: #fff;
+            background-color: #444;
+            padding: 10px;
+            margin: 10px;
+            text-align: right;
+            border: none;
+            width: calc(100% - 20px);
+            border-radius: 5px;
+            box-sizing: border-box;
+        }
+
+        .buttons {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .numbers input, .actions input, .equals input {
+            font-size: 18px;
+            width: 48px;
+            height: 48px;
+            margin: 5px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+
+        .numbers input, .actions input {
+            background-color: #eee;
+            color: #333;
+        }
+
+        .actions input {
+            background-color: #f00;
+            color: #fff;
+        }
+
+        .equals input {
+            background-color: #00f;
+            color: #fff;
+        }
+
+    </style>
+</body>
+</html>
