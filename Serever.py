@@ -6,10 +6,11 @@ from tkinter import ttk
 
 HEADER = 1024
 PORT = 5050
-FORMAT = 'utf-8'
 DISCONNECTMESSAGE = "***!DISCONNECT!***"
 LISTCOMMAND = "***!LIST!***"
 MKDIRCOMMAND = "***!MKDIR!***"
+NAVIGATECOMMAND = "***!NAVIGATE!***"
+DOWNLOADCOMMAND = "***!DOWNLOAD!***"
 PATH = "H:/Programming/python/Course/Projects/ClientServerFilesSharingProject/CloudFolder"
 
 class ServerApp:
@@ -32,6 +33,7 @@ class ServerApp:
         # Directory listing
         self.tree = ttk.Treeview(self.frame, columns=("Name",), show='tree')
         self.tree.heading("#0", text="Files in Cloud Folder")
+        self.tree.bind('<Double-1>', self.on_treeview_double_click)
         self.tree.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
         # Log area
@@ -50,6 +52,9 @@ class ServerApp:
         self.server_socket = None
         self.current_path = PATH
         self.path_stack = []
+
+        # Refresh the directory listing on startup
+        self.refresh_directory()
 
     def start_server(self):
         """Start the server and listen for incoming connections."""
@@ -84,7 +89,7 @@ class ServerApp:
         """Handle commands and file transfers from a client."""
         while True:
             try:
-                command = conn.recv(100).decode(FORMAT).strip()
+                command = conn.recv(HEADER).decode().strip()
                 if command == DISCONNECTMESSAGE:
                     self.log_message(f"Client {addr} disconnected.")
                     break
@@ -97,19 +102,42 @@ class ServerApp:
                     current_path = command.split(":")[1]
                     self.log_message(f"Listing directory: {current_path}")
                     dir_listing = self.get_directory_listing(current_path)
-                    conn.send(str(dir_listing).encode(FORMAT))
+                    conn.send(";".join(dir_listing).encode())
+                elif command.startswith(NAVIGATECOMMAND):
+                    target_dir = command.split(":")[1]
+                    new_path = os.path.join(self.current_path, target_dir)
+                    if os.path.isdir(new_path):
+                        self.path_stack.append(self.current_path)
+                        self.current_path = new_path
+                        self.refresh_directory()
+                        conn.send("NAVIGATED".encode())
+                    else:
+                        conn.send("INVALID_DIRECTORY".encode())
+                elif command.startswith(DOWNLOADCOMMAND):
+                    file_name = command.split(":")[1]
+                    file_path = os.path.join(self.current_path, file_name)
+                    if os.path.exists(file_path):
+                        file_size = os.path.getsize(file_path)
+                        conn.send(f"{file_size}".encode())
+                        with open(file_path, 'rb') as file:
+                            while (chunk := file.read(HEADER)):
+                                conn.send(chunk)
+                        self.log_message(f"Sent file: {file_name}")
+                    else:
+                        conn.send("0".encode())
                 else:
                     file_name = command
                     self.log_message(f"Receiving file: {file_name}")
+                    file_size = int(conn.recv(HEADER).decode().strip())
                     with open(os.path.join(self.current_path, file_name), 'wb') as file:
-                        data_length = int(conn.recv(HEADER).decode(FORMAT).strip())
-                        received = 0
-                        while received < data_length:
-                            file_data = conn.recv(HEADER)
-                            if not file_data:
+                        data_received = 0
+                        while data_received < file_size:
+                            chunk = conn.recv(min(HEADER, file_size - data_received))
+                            if not chunk:
                                 break
-                            file.write(file_data)
-                            received += len(file_data)
+                            file.write(chunk)
+                            data_received += len(chunk)
+                            self.log_message(f"Received {data_received}/{file_size} bytes")
                     self.log_message(f"File {file_name} received successfully.")
                     self.refresh_directory()
             except Exception as e:
@@ -147,6 +175,17 @@ class ServerApp:
         """Log messages to the GUI."""
         self.text_area.insert(tk.END, f"{message}\n")
         self.text_area.yview(tk.END)
+
+    def on_treeview_double_click(self, event):
+        """Handle double-click on treeview item."""
+        selected_item = self.tree.selection()
+        if selected_item:
+            dir_name = self.tree.item(selected_item)['text']
+            if dir_name.endswith('/'):
+                self.path_stack.append(self.current_path)
+                self.current_path = os.path.join(self.current_path, dir_name)
+                self.log_message(f"Navigated to {self.current_path}")
+                self.refresh_directory()
 
     def on_closing(self):
         """Handle closing of the GUI."""

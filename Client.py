@@ -1,8 +1,8 @@
 import socket
 import os
 import tkinter as tk
-from tkinter import filedialog, ttk, simpledialog
-from tkinter import messagebox
+from tkinter import filedialog, simpledialog, ttk
+from pathlib import Path
 
 HEADER = 1024
 PORT = 5050
@@ -12,6 +12,8 @@ ADDR = (SERVER, PORT)
 DISCONNECTMESSAGE = "***!DISCONNECT!***"
 LISTCOMMAND = "***!LIST!***"
 MKDIRCOMMAND = "***!MKDIR!***"
+NAVIGATECOMMAND = "***!NAVIGATE!***"
+DOWNLOADCOMMAND = "***!DOWNLOAD!***"
 
 class ClientApp:
     def __init__(self, root):
@@ -54,6 +56,9 @@ class ClientApp:
         self.create_folder_button = ttk.Button(button_frame, text="Create Folder on Server", command=self.create_folder)
         self.create_folder_button.pack(pady=5, side=tk.LEFT, padx=5)
 
+        self.download_button = ttk.Button(button_frame, text="Download File from Server", command=self.download_file)
+        self.download_button.pack(pady=5, side=tk.LEFT, padx=5)
+
         self.back_button = ttk.Button(button_frame, text="Back", command=self.go_back)
         self.back_button.pack(pady=5, side=tk.LEFT, padx=5)
 
@@ -87,11 +92,10 @@ class ClientApp:
 
         try:
             file_name = os.path.basename(self.file_to_send)
-            self.client_socket.send(file_name.encode(FORMAT))
-
             with open(self.file_to_send, 'rb') as file:
                 data = file.read()
-                self.client_socket.send(str(len(data)).encode(FORMAT))
+                self.client_socket.send(file_name.encode(FORMAT))
+                self.client_socket.send(f"{len(data)}".encode(FORMAT))
                 self.client_socket.send(data)
             self.log_message(f"File {file_name} sent successfully.")
         except Exception as e:
@@ -108,6 +112,29 @@ class ClientApp:
             except Exception as e:
                 self.log_message(f"Error creating folder: {e}")
 
+    def download_file(self):
+        """Request to download a file from the server."""
+        file_name = simpledialog.askstring("Download File", "Enter file name to download:")
+        if file_name:
+            try:
+                self.client_socket.send(f"{DOWNLOADCOMMAND}:{file_name}".encode(FORMAT))
+                file_size = int(self.client_socket.recv(HEADER).decode(FORMAT).strip())
+                if file_size > 0:
+                    download_path = Path.home() / 'Downloads' / file_name
+                    with open(download_path, 'wb') as file:
+                        received = 0
+                        while received < file_size:
+                            chunk = self.client_socket.recv(min(HEADER, file_size - received))
+                            if not chunk:
+                                break
+                            file.write(chunk)
+                            received += len(chunk)
+                        self.log_message(f"File {file_name} downloaded successfully to {download_path}")
+                else:
+                    self.log_message("File does not exist on the server.")
+            except Exception as e:
+                self.log_message(f"Error downloading file: {e}")
+
     def refresh_directory(self):
         """Request and refresh directory listing."""
         if not self.client_socket:
@@ -117,8 +144,8 @@ class ClientApp:
         try:
             list_command = f"{LISTCOMMAND}:{self.current_path}".encode(FORMAT)
             self.client_socket.send(list_command)
-            dir_listing = self.client_socket.recv(HEADER).decode(FORMAT)
-            self.update_directory_tree(eval(dir_listing))
+            dir_listing = self.client_socket.recv(HEADER).decode(FORMAT).split(';')
+            self.update_directory_tree(dir_listing)
         except Exception as e:
             self.log_message(f"Error refreshing directory: {e}")
 
@@ -129,20 +156,21 @@ class ClientApp:
             self.tree.insert("", tk.END, text=item)
 
     def on_treeview_double_click(self, event):
-        item = self.tree.selection()[0]
-        selected_path = self.tree.item(item, "text")
-        if selected_path.endswith('/'):
-            self.path_stack.append(self.current_path)
-            self.current_path = os.path.join(self.current_path, selected_path).replace("\\", "/")
-            self.refresh_directory()
+        """Handle double-click on treeview item."""
+        selected_item = self.tree.selection()
+        if selected_item:
+            dir_name = self.tree.item(selected_item)['text']
+            if dir_name.endswith('/'):
+                self.path_stack.append(self.current_path)
+                self.current_path = os.path.join(self.current_path, dir_name)
+                self.log_message(f"Navigated to {self.current_path}")
+                self.refresh_directory()
 
     def go_back(self):
         """Navigate to the previous directory."""
         if self.path_stack:
             self.current_path = self.path_stack.pop()
             self.refresh_directory()
-        else:
-            self.log_message("No previous directory to go back to.")
 
     def log_message(self, message):
         """Log messages to the GUI."""
